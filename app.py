@@ -8,7 +8,7 @@ Run locally:
 import streamlit as st
 import pandas as pd
 
-from data.sheet_loader import load_sheet_names, load_stock_list
+from data.sheet_loader import load_sheet_names, load_stock_list, get_spreadsheet_options
 from data.stock_fetcher import fetch_stock_data
 from logic.indicators import calculate_indicators
 from ui.sidebar import render_sidebar
@@ -109,12 +109,28 @@ def render_stock_panel(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR — phase 1: sheet selector
+# SIDEBAR — phase 1: spreadsheet + sheet selector
 # ══════════════════════════════════════════════════════════════════════════════
-sheet_names: list[str] = load_sheet_names()
+spreadsheet_options = get_spreadsheet_options()
+spreadsheet_labels = [label for label, _ in spreadsheet_options]
+spreadsheet_urls   = {label: url for label, url in spreadsheet_options}
 
 with st.sidebar:
     st.markdown("## 📈 Stock Monitor")
+
+    # Spreadsheet picker (only shown when more than one is configured)
+    if len(spreadsheet_options) > 1:
+        selected_spreadsheet: str = st.selectbox(
+            "🗂️ Spreadsheet",
+            spreadsheet_labels,
+            key="selected_spreadsheet",
+        )
+    else:
+        selected_spreadsheet = spreadsheet_labels[0] if spreadsheet_labels else ""
+
+    selected_url: str = spreadsheet_urls.get(selected_spreadsheet, "")
+
+    sheet_names: list[str] = load_sheet_names(selected_url)
     selected_sheet: str = st.selectbox(
         "📋 Sheet",
         sheet_names,
@@ -123,7 +139,7 @@ with st.sidebar:
     st.markdown("---")
 
 # ── Load stock list for selected sheet ────────────────────────────────────────
-df_stocks: pd.DataFrame = load_stock_list(selected_sheet)
+df_stocks: pd.DataFrame = load_stock_list(selected_sheet, selected_url)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR — phase 2: all other controls

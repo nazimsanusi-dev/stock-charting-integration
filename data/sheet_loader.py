@@ -24,41 +24,75 @@ def _get_gspread_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+def get_spreadsheet_options() -> list[tuple[str, str]]:
+    """
+    Return list of (label, url) tuples for all configured spreadsheets.
+
+    Supports two formats in secrets.toml:
+      - New multi-URL:  [google_sheets] with urls = [...] and labels = [...]
+      - Legacy single:  [google_sheet] with spreadsheet_url = "..."
+    """
+    secrets = st.secrets
+
+    # New multi-spreadsheet format
+    if "google_sheets" in secrets:
+        cfg = secrets["google_sheets"]
+        urls = list(cfg.get("urls", []))
+        labels = list(cfg.get("labels", []))
+        # Pad labels if fewer than urls
+        while len(labels) < len(urls):
+            labels.append(f"Spreadsheet {len(labels) + 1}")
+        return [(labels[i], urls[i]) for i in range(len(urls)) if urls[i]]
+
+    # Legacy single-spreadsheet format
+    if "google_sheet" in secrets:
+        cfg = secrets["google_sheet"]
+        url = cfg.get("spreadsheet_url") or cfg.get("url", "")
+        label = cfg.get("label", "Spreadsheet 1")
+        if url:
+            return [(label, url)]
+
+    return []
+
+
 def _get_sheet_url() -> str:
-    """Return the spreadsheet URL from secrets (supports both key names)."""
-    sheet_cfg = st.secrets["google_sheet"]
-    return sheet_cfg.get("spreadsheet_url") or sheet_cfg.get("url", "")
+    """Return the first configured spreadsheet URL (legacy helper)."""
+    options = get_spreadsheet_options()
+    return options[0][1] if options else ""
 
 
 @st.cache_data(ttl=3600)
-def load_sheet_names() -> list[str]:
+def load_sheet_names(spreadsheet_url: str = "") -> list[str]:
     """
-    Return the list of worksheet names in the configured spreadsheet.
+    Return the list of worksheet names in the given spreadsheet.
     Falls back to ['Sheet1'] on any failure.
     """
+    url = spreadsheet_url or _get_sheet_url()
     try:
         client = _get_gspread_client()
-        spreadsheet = client.open_by_url(_get_sheet_url())
+        spreadsheet = client.open_by_url(url)
         return [ws.title for ws in spreadsheet.worksheets()]
     except Exception:
         return ["Sheet1"]
 
 
 @st.cache_data(ttl=3600)
-def load_stock_list(sheet_name: str = "Sheet1") -> pd.DataFrame:
+def load_stock_list(sheet_name: str = "Sheet1", spreadsheet_url: str = "") -> pd.DataFrame:
     """
     Pull the stock list from the specified worksheet.
 
     Args:
         sheet_name: Name of the worksheet tab to read.
+        spreadsheet_url: URL of the spreadsheet (uses first configured URL if omitted).
 
     Returns:
         DataFrame with columns Name and Symbol.
         Returns an empty DataFrame on failure.
     """
+    url = spreadsheet_url or _get_sheet_url()
     try:
         client = _get_gspread_client()
-        spreadsheet = client.open_by_url(_get_sheet_url())
+        spreadsheet = client.open_by_url(url)
         worksheet = spreadsheet.worksheet(sheet_name)
         records = worksheet.get_all_records()
 
