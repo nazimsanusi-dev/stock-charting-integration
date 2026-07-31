@@ -28,7 +28,7 @@ def load_stock_list() -> pd.DataFrame:
     """
     Pull the stock list from Google Sheet.
 
-    Returns a DataFrame with columns: Stock_Name, Ticker_Code.
+    Returns a DataFrame with columns: Name, Symbol.
     Returns an empty DataFrame on failure.
     """
     try:
@@ -42,11 +42,11 @@ def load_stock_list() -> pd.DataFrame:
 
         df = pd.DataFrame(records)
         # Ensure expected columns exist
-        if "Stock_Name" not in df.columns or "Ticker_Code" not in df.columns:
-            st.error("Google Sheet mesti ada lajur 'Stock_Name' dan 'Ticker_Code'.")
-            return pd.DataFrame(columns=["Stock_Name", "Ticker_Code"])
+        if "Name" not in df.columns or "Symbol" not in df.columns:
+            st.error("Google Sheet mesti ada lajur 'Name' dan 'Symbol'.")
+            return pd.DataFrame(columns=["Name", "Symbol"])
 
-        return df[["Stock_Name", "Ticker_Code"]].dropna()
+        return df[["Name", "Symbol"]].dropna()
     except Exception as e:
         st.error(f"Gagal membaca Google Sheet: {e}")
-        return pd.DataFrame(columns=["Stock_Name", "Ticker_Code"])
+        return pd.DataFrame(columns=["Name", "Symbol"])

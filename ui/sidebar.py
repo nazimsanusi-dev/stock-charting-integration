@@ -13,7 +13,7 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
     Render the sidebar UI and return the user's selections.
 
     Args:
-        df_stocks: DataFrame with columns Stock_Name and Ticker_Code.
+        df_stocks: DataFrame with columns Name and Symbol.
 
     Returns:
         dict with keys: stock_name, ticker, period, show_sma, show_rsi, show_macd
@@ -30,11 +30,11 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
     else:
         stock_name = st.sidebar.selectbox(
             "Nama Syarikat",
-            options=df_stocks["Stock_Name"].tolist(),
+            options=df_stocks["Name"].tolist(),
             label_visibility="collapsed",
         )
-        ticker_row = df_stocks[df_stocks["Stock_Name"] == stock_name]
-        ticker = ticker_row["Ticker_Code"].values[0] if not ticker_row.empty else ""
+        ticker_row = df_stocks[df_stocks["Name"] == stock_name]
+        ticker = ticker_row["Symbol"].values[0] if not ticker_row.empty else ""
 
     st.sidebar.markdown("---")
 
