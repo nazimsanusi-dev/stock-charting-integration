@@ -117,7 +117,7 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
         # ── Gabung Timeframe — independent toggle ─────────────────────────────
         gabung_timeframe: bool = st.toggle(
             "⟂ Gabung Timeframe",
-            value=False,
+            value=True,
             key="gabung_timeframe",
         )
         timeframe2: str | None = None
@@ -149,15 +149,15 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
             ema_periods: list[int] = st.multiselect(
                 "Tempoh EMA",
                 EMA_OPTIONS,
-                default=[20, 50],
+                default=[10, 20, 50, 100],
                 label_visibility="collapsed",
                 key="ema_periods",
             )
 
         col_a, col_b = st.columns(2)
-        show_rsi  = col_a.checkbox("RSI (14)",  value=True,  key="show_rsi")
+        show_rsi  = col_a.checkbox("RSI (14)",  value=False,  key="show_rsi")
         show_cvd  = col_b.checkbox("CVD",       value=False, key="show_cvd")
-        show_cmf  = col_a.checkbox("CMF (20)",  value=False, key="show_cmf")
+        show_cmf  = col_a.checkbox("CMF (20)",  value=True, key="show_cmf")
         show_macd = col_b.checkbox("MACD",      value=True,  key="show_macd")
 
         macd_fast, macd_slow, macd_signal = 12, 26, 9
