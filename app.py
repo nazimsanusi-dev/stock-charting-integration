@@ -130,12 +130,12 @@ df_stocks: pd.DataFrame = load_stock_list(selected_sheet)
 # ══════════════════════════════════════════════════════════════════════════════
 params: dict = render_sidebar(df_stocks)
 
-# Derived values
-view_mode:        str        = params["view_mode"]
-n_cols:           int        = params["n_cols"]
-gabung_timeframe: bool       = params["gabung_timeframe"]
-period:           str        = params["period"]
-timeframe:        str        = params["timeframe"]
+# Derived values — use .get() with safe defaults in case of hot-reload state mismatch
+view_mode:        str        = params.get("view_mode",             "Tunggal")
+n_cols:           int        = int(params.get("n_cols",            3))
+gabung_timeframe: bool       = bool(params.get("gabung_timeframe", False))
+period:           str        = params.get("period",                "1 Tahun")
+timeframe:        str        = params.get("timeframe",             "Harian")
 timeframe2:       str | None = params.get("timeframe2")
 ind_cfg:          dict       = _indicator_config(params)
 
