@@ -98,7 +98,7 @@ def build_chart(
         shared_xaxes=True,
         vertical_spacing=0.025,
         row_heights=row_heights,
-        subplot_titles=[""] + sub_titles[1:],   # annotate sub-charts only
+        #subplot_titles=[""] + sub_titles[1:],   # annotate sub-charts only
     )
 
     # ── Row 1: Candlestick ────────────────────────────────────────────────────
