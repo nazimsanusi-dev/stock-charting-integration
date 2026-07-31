@@ -75,7 +75,7 @@ def render_stock_panel(
     title  = f"{name}  ·  {ticker}  ·  {timeframe}  ·  {period}"
     fig    = build_chart(df_ind, title, ind_cfg, timeframe=timeframe, height=height)
     # unique key prevents Streamlit duplicate-key warnings in grid/combined views
-    st.plotly_chart(fig, use_container_width=True,
+    st.plotly_chart(fig, width="stretch",
                     key=f"chart__{ticker}__{timeframe}__{period}__{height}")
 
     if show_metrics and len(df) >= 1:
