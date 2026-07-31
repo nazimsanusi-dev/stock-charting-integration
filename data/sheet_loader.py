@@ -1,6 +1,7 @@
 """
 data/sheet_loader.py
 Reads the stock list from Google Sheets using a Service Account.
+Supports selecting any worksheet within the spreadsheet.
 """
 
 import streamlit as st
@@ -23,30 +24,63 @@ def _get_gspread_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
-@st.cache_data(ttl=3600)
-def load_stock_list() -> pd.DataFrame:
-    """
-    Pull the stock list from Google Sheet.
+def _get_sheet_url() -> str:
+    """Return the spreadsheet URL from secrets (supports both key names)."""
+    sheet_cfg = st.secrets["google_sheet"]
+    return sheet_cfg.get("spreadsheet_url") or sheet_cfg.get("url", "")
 
-    Returns a DataFrame with columns: Name, Symbol.
-    Returns an empty DataFrame on failure.
+
+@st.cache_data(ttl=3600)
+def load_sheet_names() -> list[str]:
+    """
+    Return the list of worksheet names in the configured spreadsheet.
+    Falls back to ['Sheet1'] on any failure.
     """
     try:
         client = _get_gspread_client()
-        sheet_url: str = st.secrets["google_sheet"]["spreadsheet_url"]
-        worksheet_name: str = st.secrets["google_sheet"]["worksheet_name"]
+        spreadsheet = client.open_by_url(_get_sheet_url())
+        return [ws.title for ws in spreadsheet.worksheets()]
+    except Exception:
+        return ["Sheet1"]
 
-        spreadsheet = client.open_by_url(sheet_url)
-        worksheet = spreadsheet.worksheet(worksheet_name)
+
+@st.cache_data(ttl=3600)
+def load_stock_list(sheet_name: str = "Sheet1") -> pd.DataFrame:
+    """
+    Pull the stock list from the specified worksheet.
+
+    Args:
+        sheet_name: Name of the worksheet tab to read.
+
+    Returns:
+        DataFrame with columns Name and Symbol.
+        Returns an empty DataFrame on failure.
+    """
+    try:
+        client = _get_gspread_client()
+        spreadsheet = client.open_by_url(_get_sheet_url())
+        worksheet = spreadsheet.worksheet(sheet_name)
         records = worksheet.get_all_records()
 
         df = pd.DataFrame(records)
-        # Ensure expected columns exist
+        if df.empty:
+            return pd.DataFrame(columns=["Name", "Symbol"])
+
+        # Normalise column names — support Stock_Name/Ticker_Code variants
+        rename: dict[str, str] = {}
+        for col in df.columns:
+            cl = col.lower().strip()
+            if cl in ("name", "stock_name", "nama"):
+                rename[col] = "Name"
+            elif cl in ("symbol", "ticker", "ticker_code", "kod"):
+                rename[col] = "Symbol"
+        df = df.rename(columns=rename)
+
         if "Name" not in df.columns or "Symbol" not in df.columns:
-            st.error("Google Sheet mesti ada lajur 'Name' dan 'Symbol'.")
+            st.error("Sheet mesti ada lajur 'Name' dan 'Symbol' (atau Stock_Name / Ticker_Code).")
             return pd.DataFrame(columns=["Name", "Symbol"])
 
         return df[["Name", "Symbol"]].dropna()
     except Exception as e:
-        st.error(f"Gagal membaca Google Sheet: {e}")
+        st.error(f"Gagal membaca Google Sheet '{sheet_name}': {e}")
         return pd.DataFrame(columns=["Name", "Symbol"])

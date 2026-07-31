@@ -6,8 +6,9 @@ Run locally:
 """
 
 import streamlit as st
+import pandas as pd
 
-from data.sheet_loader import load_stock_list
+from data.sheet_loader import load_sheet_names, load_stock_list
 from data.stock_fetcher import fetch_stock_data
 from logic.indicators import calculate_indicators
 from ui.sidebar import render_sidebar
@@ -21,76 +22,176 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Minimal custom CSS (Muji-inspired: clean, white, spacious) ─────────────────
+# ── Global CSS (Muji-inspired) ─────────────────────────────────────────────────
 st.markdown(
     """
     <style>
-    /* Remove default Streamlit top padding */
-    .block-container { padding-top: 1.5rem; }
-    /* Subtle dividers */
-    hr { border-color: #F5F5F5; }
+    .block-container          { padding-top: 1.2rem; padding-bottom: 0.5rem; }
+    hr                        { border-color: #F5F5F5; }
+    [data-testid="stSidebar"] { background: #FAFAFA; }
+    /* Keep metric delta colours */
+    [data-testid="stMetricDelta"] > div { font-size: 0.78rem; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
-# ── Data layer ─────────────────────────────────────────────────────────────────
-df_stocks = load_stock_list()
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
-# ── UI layer — sidebar ─────────────────────────────────────────────────────────
-selections = render_sidebar(df_stocks)
+def _indicator_config(params: dict) -> dict:
+    """Extract indicator-related keys from the full params dict."""
+    return {
+        "ema_periods": params.get("ema_periods", []),
+        "show_rsi":    params.get("show_rsi",    False),
+        "show_macd":   params.get("show_macd",   False),
+        "show_cvd":    params.get("show_cvd",    False),
+        "show_cmf":    params.get("show_cmf",    False),
+        "macd_fast":   params.get("macd_fast",   12),
+        "macd_slow":   params.get("macd_slow",   26),
+        "macd_signal": params.get("macd_signal",  9),
+    }
 
-ticker: str = selections["ticker"]
-stock_name: str = selections["stock_name"]
-period: str = selections["period"]
-show_sma: bool = selections["show_sma"]
-show_rsi: bool = selections["show_rsi"]
-show_macd: bool = selections["show_macd"]
 
-# ── Main area ──────────────────────────────────────────────────────────────────
-if not ticker:
-    st.info("Sila tambah data saham ke Google Sheet anda dan semak semula sambungan.")
-    st.stop()
+def render_stock_panel(
+    ticker: str,
+    name: str,
+    period: str,
+    timeframe: str,
+    ind_cfg: dict,
+    height: int = 700,
+    show_metrics: bool = True,
+) -> None:
+    """Fetch → calculate → chart → metrics for one stock."""
+    df = fetch_stock_data(ticker, period, timeframe)
+    if df is None or df.empty:
+        st.warning(
+            f"Tiada data untuk **{name}** (`{ticker}`).  "
+            "Semak kod ticker (contoh: `1155.KL` untuk Bursa Malaysia)."
+        )
+        return
 
-# Fetch price data
-df_ohlcv = fetch_stock_data(ticker, period)
+    df_ind = calculate_indicators(df, ind_cfg)
+    title  = f"{name}  ·  {ticker}  ·  {timeframe}  ·  {period}"
+    fig    = build_chart(df_ind, title, ind_cfg, timeframe=timeframe, height=height)
+    # unique key prevents Streamlit duplicate-key warnings in grid/combined views
+    st.plotly_chart(fig, use_container_width=True,
+                    key=f"chart__{ticker}__{timeframe}__{period}__{height}")
 
-if df_ohlcv is None:
-    st.warning(
-        f"Tiada data harga untuk **{stock_name}** (`{ticker}`).\n\n"
-        "Sila semak kod ticker di Google Sheet (pastikan ada `.KL` untuk saham Bursa Malaysia)."
+    if show_metrics and len(df) >= 1:
+        latest = df.iloc[-1]
+        prev   = df.iloc[-2] if len(df) > 1 else latest
+        chg    = float(latest["Close"]) - float(prev["Close"])
+        chg_p  = (chg / float(prev["Close"])) * 100 if float(prev["Close"]) != 0 else 0.0
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Tutup", f"{float(latest['Close']):.3f}", f"{chg_p:+.2f}%")
+        c2.metric("Buka",  f"{float(latest['Open']):.3f}")
+        c3.metric("Tinggi",f"{float(latest['High']):.3f}")
+        c4.metric("Rendah",f"{float(latest['Low']):.3f}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR — phase 1: sheet selector
+# ══════════════════════════════════════════════════════════════════════════════
+sheet_names: list[str] = load_sheet_names()
+
+with st.sidebar:
+    st.markdown("## 📈 Stock Monitor")
+    selected_sheet: str = st.selectbox(
+        "📋 Sheet",
+        sheet_names,
+        key="selected_sheet",
     )
-    st.stop()
+    st.markdown("---")
 
-# Calculate indicators
-df_with_indicators = calculate_indicators(
-    df_ohlcv,
-    show_sma=show_sma,
-    show_rsi=show_rsi,
-    show_macd=show_macd,
-)
+# ── Load stock list for the selected sheet ─────────────────────────────────────
+df_stocks: pd.DataFrame = load_stock_list(selected_sheet)
 
-# Build and render chart
-fig = build_chart(
-    df=df_with_indicators,
-    stock_name=stock_name,
-    ticker=ticker,
-    show_sma=show_sma,
-    show_rsi=show_rsi,
-    show_macd=show_macd,
-)
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR — phase 2: all other controls
+# ══════════════════════════════════════════════════════════════════════════════
+params: dict = render_sidebar(df_stocks)
 
-st.plotly_chart(fig, use_container_width=True)
+# Derived values
+view_mode:  str       = params["view_mode"]
+period:     str       = params["period"]
+timeframe:  str       = params["timeframe"]
+timeframe2: str | None = params.get("timeframe2")
+ind_cfg:    dict      = _indicator_config(params)
 
-# ── Footer metrics ─────────────────────────────────────────────────────────────
-latest = df_ohlcv.iloc[-1]
-prev = df_ohlcv.iloc[-2] if len(df_ohlcv) > 1 else latest
-change = latest["Close"] - prev["Close"]
-change_pct = (change / prev["Close"]) * 100
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Harga Tutup", f"{latest['Close']:.3f}", f"{change:+.3f} ({change_pct:+.2f}%)")
-col2.metric("Harga Buka", f"{latest['Open']:.3f}")
-col3.metric("Tinggi", f"{latest['High']:.3f}")
-col4.metric("Rendah", f"{latest['Low']:.3f}")
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN CONTENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── TUNGGAL ───────────────────────────────────────────────────────────────────
+if view_mode == "Tunggal":
+    stocks = params.get("selected_stocks", [])
+    if not stocks:
+        st.info("👈  Pilih saham dari senarai di sebelah kiri.")
+        st.stop()
+
+    stock = stocks[0]
+    render_stock_panel(
+        stock["ticker"], stock["name"],
+        period, timeframe, ind_cfg, height=700,
+    )
+
+
+# ── GRID 3×3 ──────────────────────────────────────────────────────────────────
+elif view_mode == "Grid 3×3":
+    stocks = params.get("selected_stocks", [])
+    if not stocks:
+        st.info("👈  Pilih sehingga 9 saham dari senarai di sebelah kiri.")
+        st.stop()
+
+    st.markdown(f"#### Grid Saham  ·  {timeframe}  ·  {period}")
+    st.markdown("---")
+
+    for row_start in range(0, len(stocks), 3):
+        row_stocks = stocks[row_start : row_start + 3]
+        cols = st.columns(len(row_stocks), gap="small")
+        for col, stock in zip(cols, row_stocks):
+            with col:
+                st.markdown(f"**{stock['name']}**  `{stock['ticker']}`")
+                render_stock_panel(
+                    stock["ticker"], stock["name"],
+                    period, timeframe, ind_cfg,
+                    height=430,
+                    show_metrics=True,
+                )
+        st.markdown("---")
+
+
+# ── GABUNG TIMEFRAME ──────────────────────────────────────────────────────────
+elif view_mode == "Gabung Timeframe":
+    stocks = params.get("selected_stocks", [])
+    if not stocks:
+        st.info("👈  Pilih saham dari senarai di sebelah kiri.")
+        st.stop()
+
+    stock = stocks[0]
+    tf2   = timeframe2 or (
+        "Mingguan" if timeframe == "Harian" else "Harian"
+    )
+
+    st.markdown(
+        f"#### {stock['name']}  ·  `{stock['ticker']}`  ·  "
+        f"**{timeframe}** + **{tf2}**  ·  {period}"
+    )
+    st.markdown("---")
+
+    col_l, col_r = st.columns(2, gap="medium")
+    with col_l:
+        st.markdown(f"##### ⏱ {timeframe}")
+        render_stock_panel(
+            stock["ticker"], stock["name"],
+            period, timeframe, ind_cfg, height=560,
+        )
+    with col_r:
+        st.markdown(f"##### ⏱ {tf2}")
+        render_stock_panel(
+            stock["ticker"], stock["name"],
+            period, tf2, ind_cfg, height=560,
+        )
