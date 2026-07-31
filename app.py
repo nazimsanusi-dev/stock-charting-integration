@@ -22,15 +22,24 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Global CSS (Muji-inspired) ─────────────────────────────────────────────────
+# ── Global CSS ─────────────────────────────────────────────────────────────────
 st.markdown(
     """
     <style>
-    .block-container          { padding-top: 1.2rem; padding-bottom: 0.5rem; }
-    hr                        { border-color: #F5F5F5; }
-    [data-testid="stSidebar"] { background: #FAFAFA; }
-    /* Keep metric delta colours */
-    [data-testid="stMetricDelta"] > div { font-size: 0.78rem; }
+    /* Push content below Streamlit's fixed top toolbar */
+    .block-container { padding-top: 3.5rem !important; padding-bottom: 0.5rem; }
+    hr               { border-color: #F5F5F5; }
+
+    /* Compact OHLC metrics row */
+    .ohlc-bar {
+        font-size: 0.76rem;
+        color: #757575;
+        margin: 2px 0 8px 0;
+        line-height: 1.6;
+    }
+    .ohlc-bar b   { color: #424242; }
+    .ohlc-bar .up { color: #26A69A; font-weight: 600; }
+    .ohlc-bar .dn { color: #EF5350; font-weight: 600; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -40,7 +49,6 @@ st.markdown(
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _indicator_config(params: dict) -> dict:
-    """Extract indicator-related keys from the full params dict."""
     return {
         "ema_periods": params.get("ema_periods", []),
         "show_rsi":    params.get("show_rsi",    False),
@@ -53,6 +61,28 @@ def _indicator_config(params: dict) -> dict:
     }
 
 
+def _ohlc_bar(df: pd.DataFrame) -> None:
+    """Render a compact single-line OHLC summary below the chart."""
+    if len(df) < 1:
+        return
+    latest = df.iloc[-1]
+    prev   = df.iloc[-2] if len(df) > 1 else latest
+    chg    = float(latest["Close"]) - float(prev["Close"])
+    chg_p  = (chg / float(prev["Close"])) * 100 if float(prev["Close"]) != 0 else 0.0
+    cls    = "up" if chg_p >= 0 else "dn"
+    sign   = "▲" if chg_p >= 0 else "▼"
+    st.markdown(
+        f"<div class='ohlc-bar'>"
+        f"<b>T</b> {float(latest['Close']):.3f} "
+        f"<span class='{cls}'>{sign} {abs(chg_p):.2f}%</span>"
+        f"&ensp;·&ensp;<b>B</b> {float(latest['Open']):.3f}"
+        f"&ensp;·&ensp;<b>H</b> {float(latest['High']):.3f}"
+        f"&ensp;·&ensp;<b>R</b> {float(latest['Low']):.3f}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_stock_panel(
     ticker: str,
     name: str,
@@ -60,35 +90,22 @@ def render_stock_panel(
     timeframe: str,
     ind_cfg: dict,
     height: int = 700,
-    show_metrics: bool = True,
 ) -> None:
-    """Fetch → calculate → chart → metrics for one stock."""
+    """Fetch → calculate → chart → compact OHLC bar for one stock/timeframe."""
     df = fetch_stock_data(ticker, period, timeframe)
     if df is None or df.empty:
         st.warning(
             f"Tiada data untuk **{name}** (`{ticker}`).  "
-            "Semak kod ticker (contoh: `1155.KL` untuk Bursa Malaysia)."
+            "Semak kod ticker."
         )
         return
 
     df_ind = calculate_indicators(df, ind_cfg)
     title  = f"{name}  ·  {ticker}  ·  {timeframe}  ·  {period}"
     fig    = build_chart(df_ind, title, ind_cfg, timeframe=timeframe, height=height)
-    # unique key prevents Streamlit duplicate-key warnings in grid/combined views
     st.plotly_chart(fig, width="stretch",
                     key=f"chart__{ticker}__{timeframe}__{period}__{height}")
-
-    if show_metrics and len(df) >= 1:
-        latest = df.iloc[-1]
-        prev   = df.iloc[-2] if len(df) > 1 else latest
-        chg    = float(latest["Close"]) - float(prev["Close"])
-        chg_p  = (chg / float(prev["Close"])) * 100 if float(prev["Close"]) != 0 else 0.0
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Tutup", f"{float(latest['Close']):.3f}", f"{chg_p:+.2f}%")
-        c2.metric("Buka",  f"{float(latest['Open']):.3f}")
-        c3.metric("Tinggi",f"{float(latest['High']):.3f}")
-        c4.metric("Rendah",f"{float(latest['Low']):.3f}")
+    _ohlc_bar(df)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -105,7 +122,7 @@ with st.sidebar:
     )
     st.markdown("---")
 
-# ── Load stock list for the selected sheet ─────────────────────────────────────
+# ── Load stock list for selected sheet ────────────────────────────────────────
 df_stocks: pd.DataFrame = load_stock_list(selected_sheet)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -114,84 +131,102 @@ df_stocks: pd.DataFrame = load_stock_list(selected_sheet)
 params: dict = render_sidebar(df_stocks)
 
 # Derived values
-view_mode:  str       = params["view_mode"]
-period:     str       = params["period"]
-timeframe:  str       = params["timeframe"]
-timeframe2: str | None = params.get("timeframe2")
-ind_cfg:    dict      = _indicator_config(params)
+view_mode:        str        = params["view_mode"]
+n_cols:           int        = params["n_cols"]
+gabung_timeframe: bool       = params["gabung_timeframe"]
+period:           str        = params["period"]
+timeframe:        str        = params["timeframe"]
+timeframe2:       str | None = params.get("timeframe2")
+ind_cfg:          dict       = _indicator_config(params)
+
+# Ensure timeframe2 always has a value when gabung is active
+if gabung_timeframe and not timeframe2:
+    timeframe2 = next(
+        t for t in ["Harian", "Mingguan", "Bulanan"] if t != timeframe
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN CONTENT
 # ══════════════════════════════════════════════════════════════════════════════
 
+stocks: list[dict] = params.get("selected_stocks", [])
+
 # ── TUNGGAL ───────────────────────────────────────────────────────────────────
 if view_mode == "Tunggal":
-    stocks = params.get("selected_stocks", [])
     if not stocks:
         st.info("👈  Pilih saham dari senarai di sebelah kiri.")
         st.stop()
 
     stock = stocks[0]
-    render_stock_panel(
-        stock["ticker"], stock["name"],
-        period, timeframe, ind_cfg, height=700,
-    )
+
+    if gabung_timeframe:
+        st.markdown(
+            f"#### {stock['name']}  ·  `{stock['ticker']}`  ·  "
+            f"**{timeframe}** + **{timeframe2}**"
+        )
+        st.markdown("---")
+        col_l, col_r = st.columns(2, gap="medium")
+        with col_l:
+            st.markdown(f"##### ⏱ {timeframe}")
+            render_stock_panel(stock["ticker"], stock["name"],
+                               period, timeframe, ind_cfg, height=580)
+        with col_r:
+            st.markdown(f"##### ⏱ {timeframe2}")
+            render_stock_panel(stock["ticker"], stock["name"],
+                               period, timeframe2, ind_cfg, height=580)
+    else:
+        render_stock_panel(stock["ticker"], stock["name"],
+                           period, timeframe, ind_cfg, height=700)
 
 
-# ── GRID 3×3 ──────────────────────────────────────────────────────────────────
-elif view_mode == "Grid 3×3":
-    stocks = params.get("selected_stocks", [])
+# ── GRID ──────────────────────────────────────────────────────────────────────
+elif view_mode == "Grid":
     if not stocks:
-        st.info("👈  Pilih sehingga 9 saham dari senarai di sebelah kiri.")
+        st.info("👈  Tiada saham. Semak sambungan Google Sheet atau tapis carian.")
         st.stop()
 
-    st.markdown(f"#### Grid Saham  ·  {timeframe}  ·  {period}")
+    label_tf = (f"**{timeframe}** + **{timeframe2}**"
+                if gabung_timeframe else f"**{timeframe}**")
+    st.markdown(
+        f"#### Grid Saham  ·  {label_tf}  ·  {period}  "
+        f"·  {len(stocks)} saham  ·  {n_cols} lajur"
+    )
     st.markdown("---")
 
-    for row_start in range(0, len(stocks), 3):
-        row_stocks = stocks[row_start : row_start + 3]
+    # Smaller charts when two are stacked per cell
+    cell_h = 290 if gabung_timeframe else 420
+
+    for row_start in range(0, len(stocks), n_cols):
+        row_stocks = stocks[row_start : row_start + n_cols]
         cols = st.columns(len(row_stocks), gap="small")
+
         for col, stock in zip(cols, row_stocks):
             with col:
-                st.markdown(f"**{stock['name']}**  `{stock['ticker']}`")
-                render_stock_panel(
-                    stock["ticker"], stock["name"],
-                    period, timeframe, ind_cfg,
-                    height=430,
-                    show_metrics=True,
+                st.markdown(
+                    f"<div style='font-size:0.82rem;font-weight:600;"
+                    f"margin-bottom:3px'>{stock['name']}"
+                    f"&ensp;<code style='font-weight:400;font-size:0.75rem'>"
+                    f"{stock['ticker']}</code></div>",
+                    unsafe_allow_html=True,
                 )
+                if gabung_timeframe:
+                    st.markdown(
+                        f"<span style='font-size:0.68rem;color:#9E9E9E'>"
+                        f"⏱ {timeframe}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    render_stock_panel(stock["ticker"], stock["name"],
+                                       period, timeframe, ind_cfg, height=cell_h)
+                    st.markdown(
+                        f"<span style='font-size:0.68rem;color:#9E9E9E'>"
+                        f"⏱ {timeframe2}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    render_stock_panel(stock["ticker"], stock["name"],
+                                       period, timeframe2, ind_cfg, height=cell_h)
+                else:
+                    render_stock_panel(stock["ticker"], stock["name"],
+                                       period, timeframe, ind_cfg, height=cell_h)
+
         st.markdown("---")
-
-
-# ── GABUNG TIMEFRAME ──────────────────────────────────────────────────────────
-elif view_mode == "Gabung Timeframe":
-    stocks = params.get("selected_stocks", [])
-    if not stocks:
-        st.info("👈  Pilih saham dari senarai di sebelah kiri.")
-        st.stop()
-
-    stock = stocks[0]
-    tf2   = timeframe2 or (
-        "Mingguan" if timeframe == "Harian" else "Harian"
-    )
-
-    st.markdown(
-        f"#### {stock['name']}  ·  `{stock['ticker']}`  ·  "
-        f"**{timeframe}** + **{tf2}**  ·  {period}"
-    )
-    st.markdown("---")
-
-    col_l, col_r = st.columns(2, gap="medium")
-    with col_l:
-        st.markdown(f"##### ⏱ {timeframe}")
-        render_stock_panel(
-            stock["ticker"], stock["name"],
-            period, timeframe, ind_cfg, height=560,
-        )
-    with col_r:
-        st.markdown(f"##### ⏱ {tf2}")
-        render_stock_panel(
-            stock["ticker"], stock["name"],
-            period, tf2, ind_cfg, height=560,
-        )

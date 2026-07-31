@@ -1,22 +1,20 @@
 """
 ui/sidebar.py
 Renders the main sidebar controls and returns all user selections.
-The sheet selector is handled separately in app.py (phase-1 sidebar),
-so this function receives an already-loaded stock DataFrame.
+The sheet selector is handled separately in app.py (phase-1 sidebar).
 """
 
 import streamlit as st
 import pandas as pd
 
-EMA_OPTIONS:     list[int] = [5, 10, 20, 50, 100, 150, 200]
-PERIOD_OPTIONS:  list[str] = ["3 Bulan", "6 Bulan", "1 Tahun", "2 Tahun", "5 Tahun", "10 Tahun"]
+EMA_OPTIONS:      list[int] = [5, 10, 20, 50, 100, 150, 200]
+PERIOD_OPTIONS:   list[str] = ["3 Bulan", "6 Bulan", "1 Tahun", "2 Tahun", "5 Tahun", "10 Tahun"]
 TIMEFRAME_OPTIONS: list[str] = ["Harian", "Mingguan", "Bulanan"]
 
 
 def render_sidebar(df_stocks: pd.DataFrame) -> dict:
     """
-    Render sidebar controls (view mode, stock list, timeframe, period,
-    indicators).  Sheet selector is handled by app.py before calling this.
+    Render sidebar controls and return all user selections.
 
     Args:
         df_stocks: DataFrame with columns Name and Symbol.
@@ -25,19 +23,30 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
         dict with all user selections.
     """
     with st.sidebar:
-        # ── View mode ────────────────────────────────────────────────────────
+        # ── View mode (Tunggal / Grid) ────────────────────────────────────────
         st.markdown("**👁️ Mod Paparan**")
         view_mode: str = st.radio(
             "view_mode",
-            ["Tunggal", "Grid 3×3", "Gabung Timeframe"],
+            ["Tunggal", "Grid"],
             horizontal=True,
             label_visibility="collapsed",
             key="view_mode",
         )
 
+        # Number of columns — only relevant in Grid mode
+        n_cols: int = 3
+        if view_mode == "Grid":
+            n_cols = st.radio(
+                "Bilangan lajur",
+                [2, 3, 4],
+                index=1,
+                horizontal=True,
+                key="n_cols",
+            )
+
         st.markdown("---")
 
-        # ── Stock listing ────────────────────────────────────────────────────
+        # ── Stock listing ─────────────────────────────────────────────────────
         st.markdown("**📊 Senarai Saham**")
 
         selected_stocks: list[dict] = []
@@ -63,31 +72,22 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
                 )
 
             filtered = df_stocks[mask].reset_index(drop=True)
-            # Format: "Name [SYMBOL]" — square brackets so we can split safely
-            options = [
-                f"{row['Name']} [{row['Symbol']}]"
-                for _, row in filtered.iterrows()
-            ]
 
-            if not options:
+            if filtered.empty:
                 st.caption("Tiada hasil carian.")
-            elif view_mode == "Grid 3×3":
-                chosen_labels: list[str] = st.multiselect(
-                    "Pilih sehingga 9 saham",
-                    options=options,
-                    max_selections=9,
-                    label_visibility="collapsed",
-                    key="grid_stocks",
-                )
-                for lbl in chosen_labels:
-                    sym = lbl.rsplit("[", 1)[-1].rstrip("]")
-                    nm  = lbl.rsplit(" [", 1)[0]
-                    selected_stocks.append({"name": nm, "ticker": sym})
-                if selected_stocks:
-                    ticker     = selected_stocks[0]["ticker"]
-                    stock_name = selected_stocks[0]["name"]
+            elif view_mode == "Grid":
+                # Grid: show count badge; all filtered stocks are used automatically
+                st.caption(f"{len(filtered)} saham akan dipaparkan")
+                selected_stocks = [
+                    {"name": row["Name"], "ticker": row["Symbol"]}
+                    for _, row in filtered.iterrows()
+                ]
             else:
-                # Scrollable radio list via st.container(height=…)
+                # Tunggal: scrollable radio to pick one stock
+                options = [
+                    f"{row['Name']} [{row['Symbol']}]"
+                    for _, row in filtered.iterrows()
+                ]
                 with st.container(height=290, border=False):
                     chosen_label: str | None = st.radio(
                         "Pilih saham",
@@ -104,7 +104,7 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
 
         st.markdown("---")
 
-        # ── Timeframe ────────────────────────────────────────────────────────
+        # ── Timeframe ─────────────────────────────────────────────────────────
         st.markdown("**⏱️ Timeframe**")
         timeframe: str = st.radio(
             "timeframe",
@@ -114,8 +114,14 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
             key="timeframe",
         )
 
+        # ── Gabung Timeframe — independent toggle ─────────────────────────────
+        gabung_timeframe: bool = st.toggle(
+            "⟂ Gabung Timeframe",
+            value=False,
+            key="gabung_timeframe",
+        )
         timeframe2: str | None = None
-        if view_mode == "Gabung Timeframe":
+        if gabung_timeframe:
             other_tf = [t for t in TIMEFRAME_OPTIONS if t != timeframe]
             timeframe2 = st.radio(
                 "+ Timeframe 2",
@@ -124,7 +130,7 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
                 key="timeframe2",
             )
 
-        # ── Period ───────────────────────────────────────────────────────────
+        # ── Period ────────────────────────────────────────────────────────────
         st.markdown("**📅 Tempoh Data**")
         period: str = st.select_slider(
             "period",
@@ -136,7 +142,7 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
 
         st.markdown("---")
 
-        # ── Indicators ───────────────────────────────────────────────────────
+        # ── Indicators ────────────────────────────────────────────────────────
         st.markdown("**📈 Indikator**")
 
         with st.expander("EMA", expanded=False):
@@ -165,19 +171,21 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
         st.caption("Data: Yahoo Finance · Senarai: Google Sheets")
 
     return {
-        "view_mode":      view_mode,
-        "selected_stocks": selected_stocks,
-        "ticker":         ticker,
-        "stock_name":     stock_name,
-        "timeframe":      timeframe,
-        "timeframe2":     timeframe2,
-        "period":         period,
-        "ema_periods":    ema_periods,
-        "show_rsi":       show_rsi,
-        "show_macd":      show_macd,
-        "show_cvd":       show_cvd,
-        "show_cmf":       show_cmf,
-        "macd_fast":      int(macd_fast),
-        "macd_slow":      int(macd_slow),
-        "macd_signal":    int(macd_signal),
+        "view_mode":        view_mode,
+        "n_cols":           int(n_cols),
+        "gabung_timeframe": gabung_timeframe,
+        "selected_stocks":  selected_stocks,
+        "ticker":           ticker,
+        "stock_name":       stock_name,
+        "timeframe":        timeframe,
+        "timeframe2":       timeframe2,
+        "period":           period,
+        "ema_periods":      ema_periods,
+        "show_rsi":         show_rsi,
+        "show_macd":        show_macd,
+        "show_cvd":         show_cvd,
+        "show_cmf":         show_cmf,
+        "macd_fast":        int(macd_fast),
+        "macd_slow":        int(macd_slow),
+        "macd_signal":      int(macd_signal),
     }
