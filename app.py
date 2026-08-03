@@ -169,29 +169,40 @@ if gabung_timeframe and not timeframe2:
 
 # ── TABLE VIEW ────────────────────────────────────────────────────────────────
 if data_view == "Table":
-    st.markdown(f"#### 📋 Paparan Data Direct Sheet · **{selected_sheet}**")
+    st.markdown(f"#### 📋 Paparan Semua Lajur Sheet · **{selected_sheet}**")
     st.markdown("---")
 
-    if df_stocks.empty:
+    # Memuatkan keseluruhan data dari Google Sheet (semua lajur asal)
+    # Jika anda mempunyai fungsi load_sheet_data / get_worksheet, gunakan di sini:
+    try:
+        from data.sheet_loader import load_full_sheet_df
+        df_full = load_full_sheet_df(selected_sheet, selected_url)
+    except ImportError:
+        # Fallback menggunakan df_stocks sedia ada jika fungsi khusus belum ada
+        df_full = df_stocks
+
+    if df_full.empty:
         st.warning("Tiada data dijumpai dalam Sheet ini.")
     else:
-        # Display summary & total counts
-        st.caption(f"Jumlah rekod: **{len(df_stocks)}** baris")
+        # Tunjuk maklumat ringkas bab lajur
+        cols_list = ", ".join([f"`{col}`" for col in df_full.columns])
+        st.caption(f"📊 **Jumlah Lajur ({len(df_full.columns)}):** {cols_list}")
+        st.caption(f"🔢 **Jumlah Baris:** {len(df_full)} rekod")
         
-        # Streamlit Dataframe display with searching and column sorting
+        # Papar jadual penuh dengan kesemua lajur asal
         st.dataframe(
-            df_stocks,
+            df_full,
             use_container_width=True,
             hide_index=True,
-            height=600
+            height=650
         )
 
-        # Download CSV option
-        csv = df_stocks.to_csv(index=False).encode("utf-8")
+        # Butang Muat Turun CSV
+        csv = df_full.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 Muat Turun CSV",
+            label="📥 Muat Turun CSV Penuh",
             data=csv,
-            file_name=f"{selected_sheet}.csv",
+            file_name=f"{selected_sheet}_full.csv",
             mime="text/csv",
         )
 
