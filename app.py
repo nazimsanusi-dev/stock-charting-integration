@@ -147,11 +147,12 @@ df_stocks: pd.DataFrame = load_stock_list(selected_sheet, selected_url)
 params: dict = render_sidebar(df_stocks)
 
 # Derived values — use .get() with safe defaults in case of hot-reload state mismatch
-view_mode:        str        = params.get("view_mode",             "Tunggal")
-n_cols:           int        = int(params.get("n_cols",            3))
+data_view:        str        = params.get("data_view",        "Chart")
+view_mode:        str        = params.get("view_mode",        "Tunggal")
+n_cols:           int        = int(params.get("n_cols",       3))
 gabung_timeframe: bool       = bool(params.get("gabung_timeframe", False))
-period:           str        = params.get("period",                "1 Tahun")
-timeframe:        str        = params.get("timeframe",             "Harian")
+period:           str        = params.get("period",           "1 Tahun")
+timeframe:        str        = params.get("timeframe",        "Harian")
 timeframe2:       str | None = params.get("timeframe2")
 ind_cfg:          dict       = _indicator_config(params)
 
@@ -166,83 +167,113 @@ if gabung_timeframe and not timeframe2:
 # MAIN CONTENT
 # ══════════════════════════════════════════════════════════════════════════════
 
-stocks: list[dict] = params.get("selected_stocks", [])
-
-# ── TUNGGAL ───────────────────────────────────────────────────────────────────
-if view_mode == "Tunggal":
-    if not stocks:
-        st.info("👈  Pilih saham dari senarai di sebelah kiri.")
-        st.stop()
-
-    stock = stocks[0]
-
-    if gabung_timeframe:
-        st.markdown(
-            f"#### {stock['name']}  ·  `{stock['ticker']}`  ·  "
-            f"**{timeframe}** + **{timeframe2}**"
-        )
-        st.markdown("---")
-        col_l, col_r = st.columns(2, gap="medium")
-        with col_l:
-            st.markdown(f"##### ⏱ {timeframe}")
-            render_stock_panel(stock["ticker"], stock["name"],
-                               period, timeframe, ind_cfg, height=580)
-        with col_r:
-            st.markdown(f"##### ⏱ {timeframe2}")
-            render_stock_panel(stock["ticker"], stock["name"],
-                               period, timeframe2, ind_cfg, height=580)
-    else:
-        render_stock_panel(stock["ticker"], stock["name"],
-                           period, timeframe, ind_cfg, height=700)
-
-
-# ── GRID ──────────────────────────────────────────────────────────────────────
-elif view_mode == "Grid":
-    if not stocks:
-        st.info("👈  Tiada saham. Semak sambungan Google Sheet atau tapis carian.")
-        st.stop()
-
-    label_tf = (f"**{timeframe}** + **{timeframe2}**"
-                if gabung_timeframe else f"**{timeframe}**")
-    st.markdown(
-        f"#### Grid Saham  ·  {label_tf}  ·  {period}  "
-        f"·  {len(stocks)} saham  ·  {n_cols} lajur"
-    )
+# ── TABLE VIEW ────────────────────────────────────────────────────────────────
+if data_view == "Table":
+    st.markdown(f"#### 📋 Paparan Data Direct Sheet · **{selected_sheet}**")
     st.markdown("---")
 
-    # Smaller charts when two are stacked per cell
-    cell_h = 290 if gabung_timeframe else 420
+    if df_stocks.empty:
+        st.warning("Tiada data dijumpai dalam Sheet ini.")
+    else:
+        # Display summary & total counts
+        st.caption(f"Jumlah rekod: **{len(df_stocks)}** baris")
+        
+        # Streamlit Dataframe display with searching and column sorting
+        st.dataframe(
+            df_stocks,
+            use_container_width=True,
+            hide_index=True,
+            height=600
+        )
 
-    for row_start in range(0, len(stocks), n_cols):
-        row_stocks = stocks[row_start : row_start + n_cols]
-        cols = st.columns(len(row_stocks), gap="small")
+        # Download CSV option
+        csv = df_stocks.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Muat Turun CSV",
+            data=csv,
+            file_name=f"{selected_sheet}.csv",
+            mime="text/csv",
+        )
 
-        for col, stock in zip(cols, row_stocks):
-            with col:
-                st.markdown(
-                    f"<div style='font-size:0.82rem;font-weight:600;"
-                    f"margin-bottom:3px'>{stock['name']}"
-                    f"&ensp;<code style='font-weight:400;font-size:0.75rem'>"
-                    f"{stock['ticker']}</code></div>",
-                    unsafe_allow_html=True,
-                )
-                if gabung_timeframe:
-                    st.markdown(
-                        f"<span style='font-size:0.68rem;color:#9E9E9E'>"
-                        f"⏱ {timeframe}</span>",
-                        unsafe_allow_html=True,
-                    )
-                    render_stock_panel(stock["ticker"], stock["name"],
-                                       period, timeframe, ind_cfg, height=cell_h)
-                    st.markdown(
-                        f"<span style='font-size:0.68rem;color:#9E9E9E'>"
-                        f"⏱ {timeframe2}</span>",
-                        unsafe_allow_html=True,
-                    )
-                    render_stock_panel(stock["ticker"], stock["name"],
-                                       period, timeframe2, ind_cfg, height=cell_h)
-                else:
-                    render_stock_panel(stock["ticker"], stock["name"],
-                                       period, timeframe, ind_cfg, height=cell_h)
+# ── CHART VIEW ────────────────────────────────────────────────────────────────
+else:
+    stocks: list[dict] = params.get("selected_stocks", [])
 
+    # ── TUNGGAL ───────────────────────────────────────────────────────────────
+    if view_mode == "Tunggal":
+        if not stocks:
+            st.info("👈  Pilih saham dari senarai di sebelah kiri.")
+            st.stop()
+
+        stock = stocks[0]
+
+        if gabung_timeframe:
+            st.markdown(
+                f"#### {stock['name']}  ·  `{stock['ticker']}`  ·  "
+                f"**{timeframe}** + **{timeframe2}**"
+            )
+            st.markdown("---")
+            col_l, col_r = st.columns(2, gap="medium")
+            with col_l:
+                st.markdown(f"##### ⏱ {timeframe}")
+                render_stock_panel(stock["ticker"], stock["name"],
+                                   period, timeframe, ind_cfg, height=580)
+            with col_r:
+                st.markdown(f"##### ⏱ {timeframe2}")
+                render_stock_panel(stock["ticker"], stock["name"],
+                                   period, timeframe2, ind_cfg, height=580)
+        else:
+            render_stock_panel(stock["ticker"], stock["name"],
+                               period, timeframe, ind_cfg, height=700)
+
+
+    # ── GRID ──────────────────────────────────────────────────────────────────
+    elif view_mode == "Grid":
+        if not stocks:
+            st.info("👈  Tiada saham. Semak sambungan Google Sheet atau tapis carian.")
+            st.stop()
+
+        label_tf = (f"**{timeframe}** + **{timeframe2}**"
+                    if gabung_timeframe else f"**{timeframe}**")
+        st.markdown(
+            f"#### Grid Saham  ·  {label_tf}  ·  {period}  "
+            f"·  {len(stocks)} saham  ·  {n_cols} lajur"
+        )
         st.markdown("---")
+
+        # Smaller charts when two are stacked per cell
+        cell_h = 290 if gabung_timeframe else 420
+
+        for row_start in range(0, len(stocks), n_cols):
+            row_stocks = stocks[row_start : row_start + n_cols]
+            cols = st.columns(len(row_stocks), gap="small")
+
+            for col, stock in zip(cols, row_stocks):
+                with col:
+                    st.markdown(
+                        f"<div style='font-size:0.82rem;font-weight:600;"
+                        f"margin-bottom:3px'>{stock['name']}"
+                        f"&ensp;<code style='font-weight:400;font-size:0.75rem'>"
+                        f"{stock['ticker']}</code></div>",
+                        unsafe_allow_html=True,
+                    )
+                    if gabung_timeframe:
+                        st.markdown(
+                            f"<span style='font-size:0.68rem;color:#9E9E9E'>"
+                            f"⏱ {timeframe}</span>",
+                            unsafe_allow_html=True,
+                        )
+                        render_stock_panel(stock["ticker"], stock["name"],
+                                           period, timeframe, ind_cfg, height=cell_h)
+                        st.markdown(
+                            f"<span style='font-size:0.68rem;color:#9E9E9E'>"
+                            f"⏱ {timeframe2}</span>",
+                            unsafe_allow_html=True,
+                        )
+                        render_stock_panel(stock["ticker"], stock["name"],
+                                           period, timeframe2, ind_cfg, height=cell_h)
+                    else:
+                        render_stock_panel(stock["ticker"], stock["name"],
+                                           period, timeframe, ind_cfg, height=cell_h)
+
+            st.markdown("---")
