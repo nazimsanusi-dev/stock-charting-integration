@@ -44,6 +44,17 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
                 key="n_cols",
             )
 
+        # ── Paparan Data (Chart / Table) ──────────────────────────────────────
+        st.markdown("**📊 Paparan Data**")
+        data_view: str = st.radio(
+            "data_view",
+            ["Chart", "Table"],
+            index=0,  # "Chart" is default
+            horizontal=True,
+            label_visibility="collapsed",
+            key="data_view",
+        )
+
         st.markdown("---")
 
         # ── Stock listing ─────────────────────────────────────────────────────
@@ -156,7 +167,7 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
 
         col_a, col_b = st.columns(2)
         show_rsi  = col_a.checkbox("RSI (14)",  value=False,  key="show_rsi")
-        show_cvd  = col_b.checkbox("CVD",       value=False, key="show_cvd")
+        show_cvd  = col_b.checkbox("CVD",        value=False, key="show_cvd")
         show_cmf  = col_a.checkbox("CMF (20)",  value=True, key="show_cmf")
         show_macd = col_b.checkbox("MACD",      value=True,  key="show_macd")
 
@@ -172,7 +183,8 @@ def render_sidebar(df_stocks: pd.DataFrame) -> dict:
 
     return {
         "view_mode":        view_mode,
-        "n_cols":           int(n_cols),
+        "n_cols":            int(n_cols),
+        "data_view":         data_view,  # "Chart" or "Table"
         "gabung_timeframe": gabung_timeframe,
         "selected_stocks":  selected_stocks,
         "ticker":           ticker,
