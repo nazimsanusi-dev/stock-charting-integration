@@ -77,6 +77,27 @@ def load_sheet_names(spreadsheet_url: str = "") -> list[str]:
 
 
 @st.cache_data(ttl=3600)
+def load_full_sheet_df(sheet_name: str, spreadsheet_url: str = "") -> pd.DataFrame:
+    """
+    Loads all columns and rows from the specified worksheet tab.
+    Cached to prevent hitting Google API quotas on re-renders.
+    """
+    url = spreadsheet_url or _get_sheet_url()
+    try:
+        client = _get_gspread_client()
+        spreadsheet = client.open_by_url(url)
+        worksheet = spreadsheet.worksheet(sheet_name)
+        
+        records = worksheet.get_all_records()
+        if records:
+            return pd.DataFrame(records)
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading full sheet data from '{sheet_name}': {e}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
 def load_stock_list(sheet_name: str = "Sheet1", spreadsheet_url: str = "") -> pd.DataFrame:
     """
     Pull the stock list from the specified worksheet.
@@ -91,19 +112,16 @@ def load_stock_list(sheet_name: str = "Sheet1", spreadsheet_url: str = "") -> pd
     """
     url = spreadsheet_url or _get_sheet_url()
     try:
-        client = _get_gspread_client()
-        spreadsheet = client.open_by_url(url)
-        worksheet = spreadsheet.worksheet(sheet_name)
-        records = worksheet.get_all_records()
+        # Optimization: Reuse load_full_sheet_df to benefit from cached API calls
+        df = load_full_sheet_df(sheet_name, url)
 
-        df = pd.DataFrame(records)
         if df.empty:
             return pd.DataFrame(columns=["Name", "Symbol"])
 
         # Normalise column names — support Stock_Name/Ticker_Code variants
         rename: dict[str, str] = {}
         for col in df.columns:
-            cl = col.lower().strip()
+            cl = str(col).lower().strip()
             if cl in ("name", "stock_name", "nama"):
                 rename[col] = "Name"
             elif cl in ("symbol", "ticker", "ticker_code", "kod"):
